@@ -71,9 +71,6 @@ func ScanningSmallFile(index int, bitmap *BitMap, hashmap map[string]int64, inde
 			hashmap[word] = *indexOfWord
 		}
 	}
-
-	// 用于协程
-	waitGroup.Done()
 }
 
 // 用布隆过滤器算法查询元素是否访问过

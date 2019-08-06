@@ -2,12 +2,10 @@ package main
 
 import (
 	"fmt"
-	"sync"
 )
 
 const smallFileNum = 42
 const smallFileSize = 100 * (1 << 30) / smallFileNum
-var waitGroup = sync.WaitGroup{}
 
 
 func main() {
@@ -25,10 +23,8 @@ func main() {
 	// 用哈希表维护只出现一次的元素，以及其在大文件中出现的位置
 	HandleLargeFile("./LargeFile.txt")
 	for i := 1; i <= smallFileNum; i++ {
-		go ScanningSmallFile(i, bitmap, hashmap, &indexOfWord, hashFunc)
+		ScanningSmallFile(i, bitmap, hashmap, &indexOfWord, hashFunc)
 	}
-	waitGroup.Add(smallFileNum)
-	waitGroup.Wait()
 
 
 	// 查询是否存在不重复的词，后输出
