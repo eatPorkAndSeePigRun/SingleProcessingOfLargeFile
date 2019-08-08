@@ -1,7 +1,5 @@
 '''
 思路：
-从后往读大文件，保留最新的不重复单词
-
 位图1，用于判断是否存在该词。对于每次读进来的词，计算哈希值，相应比特位置1。
 位图2，用于标志是否重复。对于读进来的并且是被位图1标志过存在的词，则置1
 队列，用于保存不重复词。队尾保留最新不重复词，每次push都是在队尾，pop则不一定
@@ -11,7 +9,7 @@
 
 # 伪码
 # 遍历文件
-for word in largeFile[::-1]:
+for word in largeFile:
     if bitmap1.isExist(word):
         bitmap2.add(word)
         pop word from dueue
@@ -22,13 +20,13 @@ for word in largeFile[::-1]:
             write dueue to disk
 
 # 结算结果
-firstWord
-if dueue:
-    firstWord = dueue[-1]
-else:
-    # read data from disk
-    while firstWord = read(disk):   # 也是倒着读
-        if bitmap2.isExist(word)
-            continue
-        else:
-            break
+firstWord = dueue[0]    # 此时内存的第一个不重复词
+# read data from disk
+while word = read(disk):
+    if bitmap2.isExist(word)
+        continue
+    else:
+        break
+
+if word:
+    first = word    # 如果硬盘有更早的第一个不重复的词
