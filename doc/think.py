@@ -16,7 +16,7 @@ for word in largeFile:
     else:
         bitmap1.add(word)
         push word to dueue
-        if len(dueue) > 4GB :
+        if len(dueue) > maxSize:    # 推算每次I/O文件的大小和队列、两个位图共16GB得 maxSize = 7GB
             write dueue to disk
 
 # 结算结果
@@ -29,4 +29,4 @@ while word = read(disk):
         break
 
 if word:
-    first = word    # 如果硬盘有更早的第一个不重复的词
+    firstWord = word    # 如果硬盘有更早的第一个不重复的词，更新

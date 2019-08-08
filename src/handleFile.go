@@ -124,7 +124,7 @@ func FindFirstNonRepetitiveWord(hashFunc []func(string) int) (string, bool) {
 		if hasWord(bitmap2, tmpWord, hashFunc) {
 			continue
 		} else {
-			word = tmpWord	// 找到硬盘中最早不重复词，则终止循环
+			word = tmpWord // 找到硬盘中最早不重复词，则终止循环
 			break
 		}
 	}
