@@ -3,78 +3,80 @@ package main
 import (
 	"bufio"
 	"os"
-	"strconv"
 )
 
-// 分割大文件，并把所有产生小文件放入到当前目录下的smartFile文件夹中
-func HandleLargeFile(filePath string) {
+const readFileNum = 14
+const bufSize = 100 * (1 << 30) / readFileNum
+
+// 分次I/O读取大文件，并对每次读取的词调用相关函数维护位图和队列
+func HandleLargeFile(filePath string, hashFunc []func(string) int) {
 	largeFile, err := os.Open(filePath)
 	defer largeFile.Close()
 	if err != nil {
 		panic(err)
 	}
 
-	// 分割成小文件
-	deleteAllSmartFiles()
-	buf := make([]byte, smallFileSize)
-	for i := 1; i <= smallFileNum; i++ {
-		_, err := largeFile.Seek(int64((i-1)*smallFileSize), 0)
+	rd := bufio.NewReaderSize(largeFile, bufSize)
+	for {
+		word, err := rd.ReadString('\n')
 		if err != nil {
 			panic(err)
 		}
-		_, err = largeFile.Read(buf)
-		if err != nil {
-			panic(err)
+		if len(word) == 0 {
+			break
 		}
+		handleWord(word, hashFunc)
+	}
+}
 
-		smallFileI, err := os.OpenFile("./smartFile"+strconv.Itoa(int(i))+".txt", os.O_CREATE|os.O_WRONLY, os.ModePerm)
-		if err != nil {
-			panic(err)
-		}
-		_, err = smallFileI.Write(buf)
-		if err != nil {
-			panic(err)
-		}
-		err = smallFileI.Close()
-		if err != nil {
-			panic(err)
+// 处理每个词
+// 对于位图bitmap1，实际上是一个布隆算法原理，它相当于一个hashset，存放着大文件中词
+// 对于位图bitmap2，也是一个布隆算法原理，它也相当于一个hashset，存放大文件中重复出现的词
+// 它进行的流程是：
+// 		如果是第一次访问该词，则将bitmap1的相应比特位置1，加入队列，快爆内存时则将队列写到硬盘，清空队列内存
+// 		如果是重复访问，则将bitmap2的相应比特位置1，从队列出队
+func handleWord(word string, hashFunc []func(string) int) {
+	if hasWord(bitmap1, word, hashFunc) {
+		addWord(bitmap2, word, hashFunc)
+		popFromDueue(word)
+	} else {
+		addWord(bitmap1, word, hashFunc)
+		pushToDueue(word)
+		if len(dueue) > bufSize/100 {
+			writeToDisk()
 		}
 	}
 }
 
-// 每次分割前，清空存放小文件的文件夹
-func deleteAllSmartFiles() {
-	err := os.RemoveAll("./smartFile")
-	if err != nil {
-		panic(err)
+// 将队列数据存储到内存
+func writeToDisk() {
+	f, _ := os.OpenFile("spare.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	defer f.Close()
+	for _, word := range dueue {
+		_, err := f.Write([]byte(word + "\r\n"))
+		if err != nil {
+			panic(err)
+		}
 	}
+	dueue = dueue[0:0]
 }
 
-// 处理小文件，维护位图和哈希表，位图用于表示元素是否被访问过，哈希表维护只出现一次的元素及其位置信息
-func ScanningSmallFile(index int, bitmap *BitMap, hashmap map[string]int64, indexOfWord *int64, hashFunc []func(string) int) {
-	smallFileI, err := os.Open("./smartFile" + strconv.Itoa(int(index)) + ".txt")
-	defer smallFileI.Close()
-	if err != nil {
-		panic(err)
-	}
+func pushToDueue(word string) {
+	dueue = append(dueue, word)
+}
 
-	// 每次读取一个词，维护位图和哈希表
-	scanner := bufio.NewScanner(smallFileI)
-	for scanner.Scan() {
-		(*indexOfWord)++
-		word := scanner.Text()
-
-		if wordIsRepeat(word, bitmap, hashFunc) {
-			delete(hashmap, word)
+func popFromDueue(word string) {
+	for i := 0; i < len(dueue); {
+		if dueue[i] == word {
+			dueue = append(dueue[:i], dueue[i+1:]...)
 		} else {
-			setWordRepeat(word, bitmap, hashFunc)
-			hashmap[word] = *indexOfWord
+			i++
 		}
 	}
 }
 
 // 用布隆过滤器算法查询元素是否访问过
-func wordIsRepeat(word string, bitmap *BitMap, hashFunc []func(string) int) bool {
+func hasWord(bitmap *BitMap, word string, hashFunc []func(string) int) bool {
 	for i := 0; i < len(hashFunc); i++ {
 		num := hashFunc[i](word)
 		if !bitmap.IsExist(uint(num % bitmap.max)) {
@@ -84,8 +86,8 @@ func wordIsRepeat(word string, bitmap *BitMap, hashFunc []func(string) int) bool
 	return true
 }
 
-// 维护位图，把访问过的元素的哈希函数组响应哈希值的比特位置1
-func setWordRepeat(word string, bitmap *BitMap, hashFunc []func(string) int) {
+// 维护布隆过滤器的位图，把访问过的元素的哈希函数组响应哈希值的比特位置1
+func addWord(bitmap *BitMap, word string, hashFunc []func(string) int) {
 	for i := 0; i < len(hashFunc); i++ {
 		num := hashFunc[i](word)
 		bitmap.Add(uint(num % bitmap.max))
@@ -93,15 +95,41 @@ func setWordRepeat(word string, bitmap *BitMap, hashFunc []func(string) int) {
 }
 
 // 查询第一不重复的词
-func FindFirstNonRepetitiveWord(hashmap map[string]int64) (string, bool) {
-	const int64Max = int64(^uint(0) >> 1)
-	word, index := "", int64Max
-	for k, v := range hashmap {
-		if v < index {
-			word = k
+// 先找出内存中队列的最早不重复词和硬盘中的最早不重复词，再比较可能哪边更早
+// 存在则返回词，不存在则返回空
+func FindFirstNonRepetitiveWord(hashFunc []func(string) int) (string, bool) {
+	word := ""
+	// 当前内存中的最早不重复词
+	if dueue != nil {
+		word = dueue[0]
+	}
+
+	largeFile, err := os.Open("spare.txt")
+	defer largeFile.Close()
+	if err != nil {
+		panic(err)
+	}
+
+	// 遍历硬盘
+	rd := bufio.NewReader(largeFile)
+	for {
+		tmpWord, err := rd.ReadString('\n')
+		if err != nil {
+			panic(err)
+		}
+		if len(tmpWord) == 0 {
+			break
+		}
+
+		if hasWord(bitmap2, tmpWord, hashFunc) {
+			continue
+		} else {
+			word = tmpWord	// 找到硬盘中最早不重复词，则终止循环
+			break
 		}
 	}
 
+	// 返回结果
 	if word != "" {
 		return word, true
 	} else {
